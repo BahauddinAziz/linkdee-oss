@@ -22,8 +22,12 @@ export async function listCampaigns(req, res, next) {
       where: { userId: req.user.id },
       include: {
         _count: { select: { leads: true, logs: true } },
-        linkedAccount: {
-          select: { id: true, label: true, status: true, accountId: true },
+        senders: {
+          include: {
+            linkedAccount: {
+              select: { id: true, label: true, status: true, accountId: true },
+            },
+          },
         },
         steps: { orderBy: { order: 'asc' } },
       },
@@ -49,7 +53,7 @@ export async function listCampaigns(req, res, next) {
 export async function createCampaign(req, res, next) {
   try {
     const {
-      linkedAccountId,
+      linkedAccountIds,
       name,
       steps,
       delaySeconds,
@@ -58,21 +62,21 @@ export async function createCampaign(req, res, next) {
       scheduledStartAt,
     } = req.body;
 
-    if (!linkedAccountId || !name || !steps || !Array.isArray(steps) || steps.length === 0) {
+    if (!linkedAccountIds || !Array.isArray(linkedAccountIds) || linkedAccountIds.length === 0 || !name || !steps || !Array.isArray(steps) || steps.length === 0) {
       return res.status(400).json({
-        error: '`linkedAccountId`, `name`, and `steps` (non-empty array) are required.',
+        error: '`linkedAccountIds` (non-empty array), `name`, and `steps` (non-empty array) are required.',
         code: 400,
       });
     }
 
-    // Verify the linked account belongs to this user
-    const account = await prisma.linkedInAccount.findUnique({
-      where: { id: linkedAccountId },
+    // Verify the linked accounts belong to this user
+    const accounts = await prisma.linkedInAccount.findMany({
+      where: { id: { in: linkedAccountIds } },
     });
 
-    if (!account || account.userId !== req.user.id) {
+    if (accounts.length !== linkedAccountIds.length || accounts.some((a) => a.userId !== req.user.id)) {
       return res.status(403).json({
-        error: 'The specified LinkedIn account does not belong to you.',
+        error: 'One or more of the specified LinkedIn accounts do not belong to you or do not exist.',
         code: 403,
       });
     }
@@ -80,7 +84,6 @@ export async function createCampaign(req, res, next) {
     const campaign = await prisma.campaign.create({
       data: {
         userId: req.user.id,
-        linkedAccountId,
         name,
         delaySeconds: delaySeconds ?? 60,
         jitterEnabled: jitterEnabled ?? true,
@@ -95,8 +98,11 @@ export async function createCampaign(req, res, next) {
             delayDays: s.delayDays || 0,
           })),
         },
+        senders: {
+          create: linkedAccountIds.map((id) => ({ linkedAccountId: id })),
+        },
       },
-      include: { steps: { orderBy: { order: 'asc' } } },
+      include: { steps: { orderBy: { order: 'asc' } }, senders: true },
     });
 
     return res.status(201).json({ data: campaign });
@@ -119,8 +125,12 @@ export async function getCampaign(req, res, next) {
     const campaign = await prisma.campaign.findUnique({
       where: { id },
       include: {
-        linkedAccount: {
-          select: { id: true, label: true, status: true, accountId: true, unipileDsn: true },
+        senders: {
+          include: {
+            linkedAccount: {
+              select: { id: true, label: true, status: true, accountId: true, unipileDsn: true },
+            },
+          },
         },
         steps: { orderBy: { order: 'asc' } },
         _count: { select: { leads: true, logs: true } },
@@ -216,7 +226,7 @@ export async function changeCampaignStatus(req, res, next) {
 
     const campaign = await prisma.campaign.findUnique({
       where: { id },
-      include: { linkedAccount: true },
+      include: { senders: { include: { linkedAccount: true } } },
     });
 
     if (!campaign) {
@@ -227,22 +237,24 @@ export async function changeCampaignStatus(req, res, next) {
       return res.status(403).json({ error: 'Access denied.', code: 403 });
     }
 
-    // Guard: can only activate if the linked account has completed OAuth
+    // Guard: can only activate if the linked accounts have completed OAuth
     if (status === 'ACTIVE') {
-      if (!campaign.linkedAccount.accountId) {
-        return res.status(422).json({
-          error:
-            'Cannot activate campaign: the linked LinkedIn account has not completed OAuth. ' +
-            'Please connect the account via the auth URL first.',
-          code: 422,
-        });
-      }
+      for (const sender of campaign.senders) {
+        if (!sender.linkedAccount.accountId) {
+          return res.status(422).json({
+            error:
+              'Cannot activate campaign: a linked LinkedIn account has not completed OAuth. ' +
+              'Please connect the account via the auth URL first.',
+            code: 422,
+          });
+        }
 
-      if (campaign.linkedAccount.status !== 'ACTIVE') {
-        return res.status(422).json({
-          error: `Cannot activate campaign: the linked LinkedIn account status is "${campaign.linkedAccount.status}". It must be ACTIVE.`,
-          code: 422,
-        });
+        if (sender.linkedAccount.status !== 'ACTIVE') {
+          return res.status(422).json({
+            error: `Cannot activate campaign: a linked LinkedIn account status is "${sender.linkedAccount.status}". It must be ACTIVE.`,
+            code: 422,
+          });
+        }
       }
     }
 

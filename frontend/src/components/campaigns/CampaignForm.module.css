@@ -350,3 +350,51 @@
   align-self: flex-start;
   margin-left: 36px;
 }
+
+.pillContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.accountPill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.accountPill:hover {
+  background: rgba(255,255,255,0.1);
+  color: var(--text-primary);
+}
+
+.accountPillActive {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+  border-color: #8b5cf6;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.2);
+}
+
+.aiTooltip {
+  margin-top: 8px;
+  padding: 10px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: #c7d2fe;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.aiTooltipIcon {
+  font-size: 1.1rem;
+}

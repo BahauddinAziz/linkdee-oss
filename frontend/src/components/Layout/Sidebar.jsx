@@ -6,6 +6,7 @@ import styles from './Sidebar.module.css';
 const NAV_ITEMS = [
   { path: '/',          label: 'Dashboard',          icon: '◈' },
   { path: '/campaigns', label: 'Campaigns',          icon: '⚡' },
+  { path: '/inbox',     label: 'Unified Inbox',      icon: '💬' },
   { path: '/accounts',  label: 'LinkedIn Accounts',  icon: '🔗' },
   { path: '/settings',  label: 'Settings',           icon: '⚙' },
 ];

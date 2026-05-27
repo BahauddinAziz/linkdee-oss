@@ -11,6 +11,7 @@ import Signup        from './pages/Signup';
 import Dashboard     from './pages/Dashboard';
 import Campaigns     from './pages/Campaigns';
 import CampaignDetail from './pages/CampaignDetail';
+import Inbox         from './pages/Inbox';
 import Accounts      from './pages/Accounts';
 import Settings      from './pages/Settings';
 
@@ -105,6 +106,7 @@ const AppRoutes = () => (
       <Route path="/"              element={<Dashboard />} />
       <Route path="/campaigns"     element={<Campaigns />} />
       <Route path="/campaigns/:id" element={<CampaignDetail />} />
+      <Route path="/inbox"         element={<Inbox />} />
       <Route path="/accounts"      element={<Accounts />} />
       <Route path="/settings"      element={<Settings />} />
     </Route>

@@ -23,6 +23,7 @@ import accountRoutes from './routes/accounts.js';
 import campaignRoutes from './routes/campaigns.js';
 import leadRoutes from './routes/leads.js';
 import webhookRoutes from './routes/webhooks.js';
+import inboxRoutes from './routes/inbox.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +61,7 @@ app.use('/api/v1/accounts', accountRoutes);
 app.use('/api/v1/campaigns', campaignRoutes);
 app.use('/api/v1/campaigns', leadRoutes); // Leads are nested under campaigns
 app.use('/api/v1/webhooks/unipile', webhookRoutes);
+app.use('/api/v1/inbox', inboxRoutes);
 
 // ---------------------------------------------------------------------------
 // Health check endpoint

@@ -15,70 +15,87 @@ model User {
   updatedAt      DateTime          @updatedAt
   linkedAccounts LinkedInAccount[]
   campaigns      Campaign[]
+  conversations  Conversation[]
 }
 
 model LinkedInAccount {
-  id          String     @id @default(cuid())
-  userId      String
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  unipileDsn  String
-  accessToken String
-  accountId   String?
-  label       String?
-  status      String     @default("PENDING")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  campaigns   Campaign[]
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unipileDsn       String
+  accessToken      String
+  accountId        String?
+  label            String?
+  status           String           @default("PENDING")
+  dailyCap         Int              @default(100)
+  dailyActionCount Int              @default(0)
+  dailyResetAt     DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  campaignSenders  CampaignSender[]
+  conversations    Conversation[]
+  leads            Lead[]
 }
 
 model Campaign {
-  id               String          @id @default(cuid())
+  id               String           @id @default(cuid())
   userId           String
-  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  linkedAccountId  String
-  linkedAccount    LinkedInAccount @relation(fields: [linkedAccountId], references: [id])
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   name             String
-  delaySeconds     Int             @default(60)
-  jitterEnabled    Boolean         @default(true)
-  dailyCap         Int             @default(25)
-  dailyActionCount Int             @default(0)
+  delaySeconds     Int              @default(60)
+  jitterEnabled    Boolean          @default(true)
+  dailyCap         Int              @default(25)
+  dailyActionCount Int              @default(0)
   dailyResetAt     DateTime?
   scheduledStartAt DateTime?
-  status           String          @default("DRAFT")
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  status           String           @default("DRAFT")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
   leads            Lead[]
   steps            CampaignStep[]
   logs             CampaignLog[]
+  senders          CampaignSender[]
+}
+
+model CampaignSender {
+  id              String          @id @default(cuid())
+  campaignId      String
+  campaign        Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  linkedAccountId String
+  linkedAccount   LinkedInAccount @relation(fields: [linkedAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, linkedAccountId])
 }
 
 model Lead {
-  id           String    @id @default(cuid())
-  campaignId   String
-  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  profileUrl   String
-  firstName    String?
-  lastName     String?
-  company      String?
-  status              String    @default("PENDING")
-  currentStepOrder    Int       @default(1)
+  id                  String           @id @default(cuid())
+  campaignId          String
+  campaign            Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  profileUrl          String
+  firstName           String?
+  lastName            String?
+  company             String?
+  status              String           @default("PENDING")
+  currentStepOrder    Int              @default(1)
   nextActionAt        DateTime?
-  replied             Boolean   @default(false)
-  isConnectionPending Boolean   @default(false)
+  replied             Boolean          @default(false)
+  isConnectionPending Boolean          @default(false)
   executedAt          DateTime?
   errorMessage        String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  senderAccountId     String?
+  senderAccount       LinkedInAccount? @relation(fields: [senderAccountId], references: [id], onDelete: SetNull)
 }
 
 model CampaignStep {
-  id           String   @id @default(cuid())
-  campaignId   String
-  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  order        Int      // 1, 2, 3...
-  type         String   // CONNECTION_REQUEST | DIRECT_MESSAGE
-  template     String
-  delayDays    Int      // Wait X days AFTER previous step
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  order      Int // 1, 2, 3...
+  type       String // CONNECTION_REQUEST | DIRECT_MESSAGE
+  template   String
+  delayDays  Int // Wait X days AFTER previous step
 }
 
 model CampaignLog {
@@ -89,4 +106,27 @@ model CampaignLog {
   level      String
   message    String
   createdAt  DateTime @default(now())
+}
+
+model Conversation {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  linkedAccountId  String
+  linkedAccount    LinkedInAccount @relation(fields: [linkedAccountId], references: [id], onDelete: Cascade)
+  unipileChatId    String
+  targetName       String
+  targetProfileUrl String?
+  lastMessageAt    DateTime
+  messages         Message[]
+}
+
+model Message {
+  id               String       @id @default(cuid())
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  unipileMessageId String       @unique
+  text             String
+  isFromMe         Boolean
+  createdAt        DateTime     @default(now())
 }

@@ -12,11 +12,12 @@ const VARIABLE_CHIPS = [
   { label: '{last_name}',   value: '{last_name}' },
   { label: '{company}',     value: '{company}' },
   { label: '{job_title}',   value: '{job_title}' },
+  { label: '✨ {ai_icebreaker}', value: '{ai_icebreaker}' },
 ];
 
 const INITIAL_STATE = {
   name: '',
-  linkedAccountId: '',
+  linkedAccountIds: [],
   steps: [{ type: 'CONNECTION_REQUEST', template: '', delayDays: 0 }],
   delaySeconds: 60,
   jitterEnabled: true,
@@ -27,7 +28,9 @@ const INITIAL_STATE = {
 const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
   // Handle mapping from old data format if necessary
   const data = { ...INITIAL_STATE, ...initialData };
-  if (initialData?.accountId && !initialData?.linkedAccountId) data.linkedAccountId = initialData.accountId;
+  if (!data.linkedAccountIds) data.linkedAccountIds = [];
+  if (initialData?.linkedAccountId && data.linkedAccountIds.length === 0) data.linkedAccountIds = [initialData.linkedAccountId];
+  if (initialData?.accountId && data.linkedAccountIds.length === 0) data.linkedAccountIds = [initialData.accountId];
   if (initialData?.jitter !== undefined && initialData?.jitterEnabled === undefined) data.jitterEnabled = initialData.jitter;
   if (initialData?.scheduledAt && !initialData?.scheduledStartAt) data.scheduledStartAt = initialData.scheduledAt;
   if (initialData?.mode && !initialData?.steps) {
@@ -80,7 +83,7 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
   const validate = () => {
     const errs = {};
     if (!form.name.trim()) errs.name = 'Campaign name is required';
-    if (!form.linkedAccountId) errs.linkedAccountId = 'Select a LinkedIn account';
+    if (!form.linkedAccountIds || form.linkedAccountIds.length === 0) errs.linkedAccountIds = 'Select at least one LinkedIn account';
     if (form.dailyCap < 5 || form.dailyCap > 100) errs.dailyCap = 'Daily cap must be between 5 and 100';
     
     form.steps.forEach((step, i) => {
@@ -107,7 +110,7 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
     try {
       await onSubmit({
         name: form.name,
-        linkedAccountId: form.linkedAccountId,
+        linkedAccountIds: form.linkedAccountIds,
         dailyCap: Number(form.dailyCap),
         delaySeconds: Number(form.delaySeconds),
         jitterEnabled: form.jitterEnabled,
@@ -136,22 +139,30 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
         {errors.name && <span className="form-error">⚠ {errors.name}</span>}
       </div>
 
-      {/* LinkedIn Account */}
+      {/* LinkedIn Accounts */}
       <div className="form-group">
-        <label className="form-label">LinkedIn Account *</label>
-        <select
-          className={`form-input form-select ${errors.linkedAccountId ? 'error' : ''}`}
-          value={form.linkedAccountId}
-          onChange={(e) => handleChange('linkedAccountId', e.target.value)}
-        >
-          <option value="">Select an account...</option>
-          {accounts.map((acc) => (
-            <option key={acc.id} value={acc.id}>
-              {acc.label || acc.email || acc.id}
-            </option>
-          ))}
-        </select>
-        {errors.linkedAccountId && <span className="form-error">⚠ {errors.linkedAccountId}</span>}
+        <label className="form-label">LinkedIn Accounts (Sender Rotation) *</label>
+        <div className={styles.pillContainer}>
+          {accounts.map((acc) => {
+             const isSelected = form.linkedAccountIds.includes(acc.id);
+             return (
+               <button
+                 key={acc.id}
+                 type="button"
+                 className={`${styles.accountPill} ${isSelected ? styles.accountPillActive : ''}`}
+                 onClick={() => {
+                   let next = [...form.linkedAccountIds];
+                   if (isSelected) next = next.filter(id => id !== acc.id);
+                   else next.push(acc.id);
+                   handleChange('linkedAccountIds', next);
+                 }}
+               >
+                 {acc.label || acc.email || acc.id}
+               </button>
+             )
+          })}
+        </div>
+        {errors.linkedAccountIds && <span className="form-error">⚠ {errors.linkedAccountIds}</span>}
         {accounts.length === 0 && (
           <span className={styles.hint}>No accounts connected. Go to LinkedIn Accounts to add one.</span>
         )}
@@ -229,6 +240,15 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
                         </span>
                       ))}
                     </div>
+
+                    {form.steps[index].template.includes('{ai_icebreaker}') && (
+                      <div className={styles.aiTooltip}>
+                        <span className={styles.aiTooltipIcon}>✨</span>
+                        <span>
+                          <strong>AI Icebreaker Active:</strong> We'll analyze the lead's LinkedIn profile and recent posts to generate a highly personalized, natural-sounding opening sentence.
+                        </span>
+                      </div>
+                    )}
 
                     <textarea
                       ref={(el) => (textareaRefs.current[index] = el)}

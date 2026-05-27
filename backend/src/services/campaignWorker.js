@@ -63,9 +63,23 @@ function computeDelay(delaySeconds, jitterEnabled) {
  * @param {{ firstName?: string, lastName?: string, company?: string }} lead - Lead data.
  * @returns {string} Formatted message string.
  */
-function formatTemplate(template, lead) {
-  return template
+async function generateIcebreaker(profile) {
+  return `Hi ${profile.firstName || 'there'}, noticed your work at ${profile.company || 'your company'}. Amazing stuff!`;
+}
+
+async function formatTemplate(template, lead) {
+  let text = template
     .replace(/\{first_name\}/gi, lead.firstName || '')
+    .replace(/\{last_name\}/gi, lead.lastName || '')
+    .replace(/\{company\}/gi, lead.company || '');
+
+  if (text.includes('{ai_icebreaker}')) {
+    const icebreaker = await generateIcebreaker(lead);
+    text = text.replace(/\{ai_icebreaker\}/gi, icebreaker);
+  }
+
+  return text.trim();
+}/gi, lead.firstName || '')
     .replace(/\{last_name\}/gi, lead.lastName || '')
     .replace(/\{company\}/gi, lead.company || '')
     .trim();
@@ -108,14 +122,14 @@ async function enrichLead(dsn, accessToken, accountId, lead) {
  * @returns {Promise<void>}
  * @throws {Error} If the Unipile API call fails.
  */
-async function dispatchOutreach(campaign, step, lead, decryptedToken) {
-  const { linkedAccount } = campaign;
+async function dispatchOutreach(campaignSender, step, lead, decryptedToken) {
+  const { linkedAccount } = campaignSender;
   const { unipileDsn, accountId } = linkedAccount;
 
   // Extract LinkedIn public identifier from profile URL
   const profileIdentifier = lead.profileUrl.endsWith('/') ? lead.profileUrl.slice(0, -1).split('/in/').pop() : lead.profileUrl.split('/in/').pop();
 
-  const message = formatTemplate(step.template || '', lead);
+  const message = await formatTemplate(step.template || '', lead);
 
   if (step.type === 'CONNECTION_REQUEST') {
     await sendConnectionRequest(
@@ -150,8 +164,12 @@ async function processNextLead() {
     where: { status: 'ACTIVE' },
     include: {
       steps: { orderBy: { order: 'asc' } },
-      linkedAccount: {
-        select: { id: true, unipileDsn: true, accountId: true, accessToken: true, status: true },
+      senders: {
+        include: {
+          linkedAccount: {
+            select: { id: true, unipileDsn: true, accountId: true, accessToken: true, status: true, dailyActionCount: true, dailyCap: true },
+          },
+        },
       },
     },
   });
@@ -163,14 +181,6 @@ async function processNextLead() {
   for (const campaign of activeCampaigns) {
     // Skip if daily cap reached
     if (campaign.dailyActionCount >= campaign.dailyCap) {
-      continue;
-    }
-
-    // Skip if the linked account is not connected
-    if (campaign.linkedAccount.status !== 'ACTIVE' || !campaign.linkedAccount.accountId) {
-      console.warn(
-        `[Worker] Campaign ${campaign.id} skipped — linked account not ACTIVE or missing accountId.`
-      );
       continue;
     }
 
@@ -216,33 +226,59 @@ async function processNextLead() {
     didWork = true;
 
     try {
-      const decryptedToken = decrypt(campaign.linkedAccount.accessToken);
+      // SENDER ROTATION LOGIC
+      let selectedSender = null;
+      if (lead.currentStepOrder > 1 && lead.senderAccountId) {
+        selectedSender = campaign.senders.find((s) => s.linkedAccount.id === lead.senderAccountId);
+      }
+      
+      if (!selectedSender) {
+        const eligibleSenders = campaign.senders.filter(
+          (s) =>
+            s.linkedAccount.status === 'ACTIVE' &&
+            s.linkedAccount.accountId &&
+            s.linkedAccount.dailyActionCount < s.linkedAccount.dailyCap
+        );
 
-      // Enrich lead data if firstName/lastName/company are missing
-      const enrichedData = await enrichLead(
-        campaign.linkedAccount.unipileDsn,
-        decryptedToken,
-        campaign.linkedAccount.accountId,
-        lead
-      );
-
-      // Persist enriched data back to the lead (non-blocking — ignore errors)
-      if (enrichedData.firstName || enrichedData.lastName || enrichedData.company) {
-        await prisma.lead.update({
-          where: { id: lead.id },
-          data: {
-            firstName: enrichedData.firstName || lead.firstName,
-            lastName: enrichedData.lastName || lead.lastName,
-            company: enrichedData.company || lead.company,
-          },
-        }).catch(() => {});
+        if (eligibleSenders.length > 0) {
+          eligibleSenders.sort((a, b) => a.linkedAccount.dailyActionCount - b.linkedAccount.dailyActionCount);
+          selectedSender = eligibleSenders[0];
+        }
       }
 
-      // Build enriched lead for template formatting
+      if (!selectedSender || selectedSender.linkedAccount.status !== 'ACTIVE' || !selectedSender.linkedAccount.accountId || selectedSender.linkedAccount.dailyActionCount >= selectedSender.linkedAccount.dailyCap) {
+         await prisma.lead.update({
+           where: { id: lead.id },
+           data: { status: lead.status },
+         });
+         continue;
+      }
+
+      const decryptedToken = decrypt(selectedSender.linkedAccount.accessToken);
+
+      let enrichedData = {};
+      if (!lead.firstName || !lead.lastName || !lead.company || step.template?.includes('{ai_icebreaker}')) {
+        enrichedData = await enrichLead(
+          selectedSender.linkedAccount.unipileDsn,
+          decryptedToken,
+          selectedSender.linkedAccount.accountId,
+          lead
+        );
+        if (enrichedData.firstName || enrichedData.lastName || enrichedData.company) {
+          await prisma.lead.update({
+            where: { id: lead.id },
+            data: {
+              firstName: enrichedData.firstName || lead.firstName,
+              lastName: enrichedData.lastName || lead.lastName,
+              company: enrichedData.company || lead.company,
+            },
+          }).catch(() => {});
+        }
+      }
+
       const enrichedLead = { ...lead, ...enrichedData };
 
-      // Send the outreach
-      await dispatchOutreach(campaign, step, enrichedLead, decryptedToken);
+      await dispatchOutreach(selectedSender, step, enrichedLead, decryptedToken);
 
       let nextStatus = 'ACTIVE';
       let nextActionAt = null;
@@ -271,11 +307,16 @@ async function processNextLead() {
             nextActionAt,
             isConnectionPending,
             executedAt: new Date(),
-            errorMessage: null 
+            errorMessage: null,
+            senderAccountId: selectedSender.linkedAccount.id
           },
         }),
         prisma.campaign.update({
           where: { id: campaign.id },
+          data: { dailyActionCount: { increment: 1 } },
+        }),
+        prisma.linkedInAccount.update({
+          where: { id: selectedSender.linkedAccount.id },
           data: { dailyActionCount: { increment: 1 } },
         }),
         prisma.campaignLog.create({

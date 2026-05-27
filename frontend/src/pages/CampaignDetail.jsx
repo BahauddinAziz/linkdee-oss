@@ -184,6 +184,9 @@ const CampaignDetail = () => {
         <div className={styles.campaignMeta}>
           <h1 className={styles.campaignName}>{campaign.name}</h1>
           <div className={styles.campaignBadges}>
+            {campaign.linkedAccountIds && campaign.linkedAccountIds.length > 0 && (
+              <Badge status={`${campaign.linkedAccountIds.length} Account${campaign.linkedAccountIds.length > 1 ? 's' : ''} Attached`} />
+            )}
             <Badge status={`${campaign.steps?.length || 1}-Step Sequence`} />
             <Badge status={campaign.status} />
           </div>

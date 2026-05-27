@@ -107,25 +107,63 @@ async function handleAccountDisconnected(payload) {
 }
 
 /**
- * Processes `message.created` events.
+ * Processes \`message.created\` events.
  * If a matching lead is found (by LinkedIn profile URL or provider ID),
- * sets `replied = true`, set status `COMPLETED`. Log a `SUCCESS` message: "Target replied! Stopping sequence."
+ * sets \`replied = true\`, set status \`COMPLETED\`. Log a \`SUCCESS\` message: "Target replied! Stopping sequence."
  *
  * @param {Object} payload - Unipile webhook event payload.
  * @returns {Promise<void>}
  */
 async function handleMessageCreated(payload) {
-  const { sender_provider_id: senderProviderId, chat_id: chatId, account_id: accountId } = payload?.data || {};
+  const { sender_provider_id: senderProviderId, chat_id: chatId, account_id: accountId, text, id: unipileMessageId } = payload?.data || {};
 
-  // Skip if it's an outbound message from our own account
-  // In many webhook payloads for Unipile, sender_id is the sender's provider_id.
-  if (!senderProviderId) return;
+  if (!senderProviderId || !chatId || !accountId) return;
+
+  const linkedAccount = await prisma.linkedInAccount.findFirst({
+    where: { accountId },
+  });
+
+  if (linkedAccount) {
+    let conversation = await prisma.conversation.findFirst({
+      where: { unipileChatId: chatId, linkedAccountId: linkedAccount.id },
+    });
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          userId: linkedAccount.userId,
+          linkedAccountId: linkedAccount.id,
+          unipileChatId: chatId,
+          targetName: senderProviderId,
+          lastMessageAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+    }
+
+    if (unipileMessageId) {
+      await prisma.message.upsert({
+        where: { unipileMessageId },
+        create: {
+          conversationId: conversation.id,
+          unipileMessageId,
+          text: text || '',
+          isFromMe: false,
+        },
+        update: {},
+      });
+    }
+  }
 
   // Find leads for this account that are ACTIVE or PENDING
   const leads = await prisma.lead.findMany({
     where: {
       status: { in: ['ACTIVE', 'PENDING', 'SENT', 'SENDING'] },
-      campaign: { linkedAccount: { accountId } },
+      campaign: { senders: { some: { linkedAccount: { accountId } } } },
     },
     include: { campaign: { select: { id: true } } },
   });
@@ -171,7 +209,7 @@ async function handleConnectionAccepted(payload) {
   const leads = await prisma.lead.findMany({
     where: {
       isConnectionPending: true,
-      campaign: { linkedAccount: { accountId } },
+      campaign: { senders: { some: { linkedAccount: { accountId } } } },
     },
     include: { campaign: { include: { steps: { orderBy: { order: 'asc' } } } } },
   });
