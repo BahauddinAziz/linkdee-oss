@@ -1,0 +1,22 @@
+{
+  "name": "linkedreach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source LinkedIn outreach platform built on top of the Unipile API",
+  "scripts": {
+    "dev": "npm run dev --workspace=backend & npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
+    "migrate": "npm run migrate --workspace=backend",
+    "generate": "npm run generate --workspace=backend",
+    "install:all": "npm install --workspace=backend && npm install --workspace=frontend"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,157 @@
+.page {
+  padding: 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  animation: fadeIn 0.3s ease both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Greeting */
+.greeting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.greetTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+}
+
+.greetSub {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* Stats Grid */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1200px) {
+  .statsGrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .statsGrid { grid-template-columns: 1fr; }
+}
+
+.statSkeleton {
+  height: 100px;
+  border-radius: var(--radius-lg);
+}
+
+.tableSkeleton {
+  height: 300px;
+  border-radius: var(--radius-lg);
+}
+
+/* Error Banner */
+.errorBanner {
+  padding: 14px 18px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-md);
+  color: var(--color-error);
+  font-size: 0.875rem;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Recent Campaigns */
+.recentCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.recentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.recentTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.recentTable {
+  overflow-x: auto;
+}
+
+.recentTable table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.recentTable th {
+  padding: 10px 20px;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.recentRow {
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background var(--transition-fast);
+}
+
+.recentRow:last-child {
+  border-bottom: none;
+}
+
+.recentRow:hover {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.recentRow td {
+  padding: 14px 20px;
+  vertical-align: middle;
+}
+
+.recentName {
+  font-weight: 600;
+  color: var(--text-primary) !important;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recentCount {
+  color: var(--text-secondary) !important;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.recentArrow {
+  color: var(--text-muted) !important;
+  text-align: right;
+  transition: color var(--transition-base);
+}
+
+.recentRow:hover .recentArrow {
+  color: var(--color-primary) !important;
+}

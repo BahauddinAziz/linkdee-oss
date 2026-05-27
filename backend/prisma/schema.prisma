@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String            @id @default(cuid())
+  email          String            @unique
+  passwordHash   String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  linkedAccounts LinkedInAccount[]
+  campaigns      Campaign[]
+}
+
+model LinkedInAccount {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unipileDsn  String
+  accessToken String
+  accountId   String?
+  label       String?
+  status      String     @default("PENDING")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  campaigns   Campaign[]
+}
+
+model Campaign {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  linkedAccountId  String
+  linkedAccount    LinkedInAccount @relation(fields: [linkedAccountId], references: [id])
+  name             String
+  mode             String
+  template         String
+  delaySeconds     Int             @default(60)
+  jitterEnabled    Boolean         @default(true)
+  dailyCap         Int             @default(25)
+  dailyActionCount Int             @default(0)
+  dailyResetAt     DateTime?
+  scheduledStartAt DateTime?
+  status           String          @default("DRAFT")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  leads            Lead[]
+  logs             CampaignLog[]
+}
+
+model Lead {
+  id           String    @id @default(cuid())
+  campaignId   String
+  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  profileUrl   String
+  firstName    String?
+  lastName     String?
+  company      String?
+  status       String    @default("PENDING")
+  executedAt   DateTime?
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model CampaignLog {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  leadId     String?
+  level      String
+  message    String
+  createdAt  DateTime @default(now())
+}
