@@ -109,37 +109,53 @@ async function handleAccountDisconnected(payload) {
 /**
  * Processes `message.created` events.
  * If a matching lead is found (by LinkedIn profile URL or provider ID),
- * creates a CampaignLog entry to record the inbound or outbound message.
+ * sets `replied = true`, set status `COMPLETED`. Log a `SUCCESS` message: "Target replied! Stopping sequence."
  *
  * @param {Object} payload - Unipile webhook event payload.
  * @returns {Promise<void>}
  */
 async function handleMessageCreated(payload) {
-  const { sender_provider_id: senderProviderId, text, chat_id: chatId } = payload?.data || {};
+  const { sender_provider_id: senderProviderId, chat_id: chatId, account_id: accountId } = payload?.data || {};
 
-  // Attempt to find a lead associated with the sender
-  const lead = await prisma.lead.findFirst({
+  // Skip if it's an outbound message from our own account
+  // In many webhook payloads for Unipile, sender_id is the sender's provider_id.
+  if (!senderProviderId) return;
+
+  // Find leads for this account that are ACTIVE or PENDING
+  const leads = await prisma.lead.findMany({
     where: {
-      status: { in: ['SENT', 'SENDING'] },
+      status: { in: ['ACTIVE', 'PENDING', 'SENT', 'SENDING'] },
+      campaign: { linkedAccount: { accountId } },
     },
     include: { campaign: { select: { id: true } } },
   });
 
+  // Match the lead by checking if the profileUrl includes the senderProviderId
+  const lead = leads.find(l => l.profileUrl.includes(senderProviderId));
+
   if (!lead) return;
+
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      replied: true,
+      status: 'COMPLETED'
+    }
+  });
 
   await prisma.campaignLog.create({
     data: {
       campaignId: lead.campaign.id,
       leadId: lead.id,
-      level: 'INFO',
-      message: `Message event received. chat_id=${chatId}, sender=${senderProviderId || 'unknown'}. Preview: "${String(text || '').slice(0, 120)}"`,
+      level: 'SUCCESS',
+      message: 'Target replied! Stopping sequence.',
     },
   });
 }
 
 /**
  * Processes `connection.accepted` events.
- * Updates matching lead status to SENT if they were in SENDING state.
+ * Updates matching lead status: If isConnectionPending == true, set isConnectionPending = false, increment currentStepOrder, and calculate nextActionAt for the new step.
  *
  * @param {Object} payload - Unipile webhook event payload.
  * @returns {Promise<void>}
@@ -152,24 +168,37 @@ async function handleConnectionAccepted(payload) {
     return;
   }
 
-  // Find a lead whose campaign uses the relevant account and is currently in SENDING
-  const lead = await prisma.lead.findFirst({
+  const leads = await prisma.lead.findMany({
     where: {
-      status: 'SENDING',
-      campaign: {
-        linkedAccount: { accountId },
-      },
+      isConnectionPending: true,
+      campaign: { linkedAccount: { accountId } },
     },
-    include: { campaign: { select: { id: true } } },
+    include: { campaign: { include: { steps: { orderBy: { order: 'asc' } } } } },
   });
 
+  const lead = leads.find(l => l.profileUrl.includes(providerId));
+
   if (!lead) return;
+
+  const nextStepOrder = lead.currentStepOrder + 1;
+  const nextStep = lead.campaign.steps.find(s => s.order === nextStepOrder);
+  
+  let nextStatus = lead.status;
+  let nextActionAt = null;
+
+  if (nextStep) {
+    nextActionAt = new Date(Date.now() + nextStep.delayDays * 24 * 60 * 60 * 1000);
+  } else {
+    nextStatus = 'COMPLETED';
+  }
 
   await prisma.lead.update({
     where: { id: lead.id },
     data: {
-      status: 'SENT',
-      executedAt: new Date(),
+      isConnectionPending: false,
+      currentStepOrder: nextStepOrder,
+      nextActionAt,
+      status: nextStatus
     },
   });
 
@@ -178,11 +207,11 @@ async function handleConnectionAccepted(payload) {
       campaignId: lead.campaign.id,
       leadId: lead.id,
       level: 'INFO',
-      message: `Connection accepted by provider_id=${providerId}.`,
+      message: `Connection accepted by provider_id=${providerId}. Moved to step ${nextStepOrder}.`,
     },
   });
 
-  console.info(`[Webhook] connection.accepted: Lead ${lead.id} updated to SENT.`);
+  console.info(`[Webhook] connection.accepted: Lead ${lead.id} connection pending resolved.`);
 }
 
 /**

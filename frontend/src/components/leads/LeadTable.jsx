@@ -70,6 +70,7 @@ const LeadTable = ({ leads = [], isLoading = false }) => {
               <th>First Name</th>
               <th>Last Name</th>
               <th>Status</th>
+              <th>Sequence Status</th>
               <th>Executed At</th>
               <th>Notes</th>
             </tr>
@@ -95,6 +96,18 @@ const LeadTable = ({ leads = [], isLoading = false }) => {
                 <td className={styles.name}>{lead.lastName || '—'}</td>
                 <td>
                   <Badge status={lead.status || 'PENDING'} />
+                </td>
+                <td>
+                  {(() => {
+                    if (lead.replied) return <span className={styles.glowingGreenBadge}>Replied!</span>;
+                    if (lead.isConnectionPending) return <span className={styles.pendingBadge}>Pending Connect</span>;
+                    const now = new Date();
+                    const nextAction = lead.nextActionAt ? new Date(lead.nextActionAt) : null;
+                    if (nextAction && nextAction > now) {
+                      return <span className={styles.waitingBadge}>Waiting until {nextAction.toLocaleString('en-US', { month: 'short', day: 'numeric' })}</span>;
+                    }
+                    return <span className={styles.stepBadge}>Step {lead.currentStepOrder || 1}</span>;
+                  })()}
                 </td>
                 <td className={styles.date}>{formatDate(lead.executedAt)}</td>
                 <td>

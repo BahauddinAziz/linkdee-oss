@@ -214,3 +214,139 @@
   gap: 10px;
   padding-top: 4px;
 }
+
+/* Sequence Builder */
+.sequenceBuilder {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-lg);
+}
+
+.sequenceTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.stepsList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+
+.stepsList::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 14px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  z-index: 0;
+}
+
+.stepCard {
+  position: relative;
+  z-index: 1;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-left: 36px;
+}
+
+.stepCard::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: -22px;
+  width: 22px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.stepHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stepIndicator {
+  position: absolute;
+  top: 10px;
+  left: -48px;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-card);
+  border: 2px solid var(--color-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+  white-space: nowrap;
+  text-indent: -9999px; /* Hide text, just show circle */
+}
+
+.stepCard:first-child .stepIndicator {
+  border-color: var(--color-success);
+}
+
+.stepHeader .stepIndicator {
+  position: static;
+  width: auto;
+  height: auto;
+  background: none;
+  border: none;
+  box-shadow: none;
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  text-indent: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.removeStepBtn {
+  background: transparent;
+  border: none;
+  color: var(--color-error);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
+}
+
+.removeStepBtn:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.delayInputWrap {
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.addStepBtn {
+  align-self: flex-start;
+  margin-left: 36px;
+}

@@ -99,34 +99,33 @@ async function enrichLead(dsn, accessToken, accountId, lead) {
 }
 
 /**
- * Dispatches a single outreach action for a given lead based on the campaign mode.
+ * Dispatches a single outreach action for a given lead based on the campaign step.
  *
  * @param {Object} campaign - The campaign object with linkedAccount relation.
+ * @param {Object} step - The campaign step to execute.
  * @param {Object} lead - The lead object to process.
  * @param {string} decryptedToken - Decrypted Unipile access token.
  * @returns {Promise<void>}
  * @throws {Error} If the Unipile API call fails.
  */
-async function dispatchOutreach(campaign, lead, decryptedToken) {
-  const { linkedAccount, mode } = campaign;
+async function dispatchOutreach(campaign, step, lead, decryptedToken) {
+  const { linkedAccount } = campaign;
   const { unipileDsn, accountId } = linkedAccount;
 
   // Extract LinkedIn public identifier from profile URL
-  const profileIdentifier = lead.profileUrl.replace(/\/$/, '').split('/in/').pop();
+  const profileIdentifier = lead.profileUrl.endsWith('/') ? lead.profileUrl.slice(0, -1).split('/in/').pop() : lead.profileUrl.split('/in/').pop();
 
-  const message = formatTemplate(campaign.template, lead);
+  const message = formatTemplate(step.template || '', lead);
 
-  if (mode === 'CONNECTION' || mode === 'CONNECTION_THEN_MESSAGE') {
-    // For CONNECTION_THEN_MESSAGE: send connection request; message will be sent
-    // once the `connection.accepted` webhook triggers (handled in webhookController).
+  if (step.type === 'CONNECTION_REQUEST') {
     await sendConnectionRequest(
       unipileDsn,
       decryptedToken,
       accountId,
       profileIdentifier,
-      mode === 'CONNECTION' ? message : '' // Only attach note for pure CONNECTION mode
+      message
     );
-  } else if (mode === 'MESSAGE') {
+  } else if (step.type === 'DIRECT_MESSAGE') {
     // Get or create a chat thread, then send the DM
     const chat = await getOrCreateChat(unipileDsn, decryptedToken, accountId, profileIdentifier);
     if (!chat?.id) {
@@ -134,7 +133,7 @@ async function dispatchOutreach(campaign, lead, decryptedToken) {
     }
     await sendDirectMessage(unipileDsn, decryptedToken, accountId, chat.id, message);
   } else {
-    throw new Error(`Unknown campaign mode: "${mode}"`);
+    throw new Error(`Unknown step type: "${step.type}"`);
   }
 }
 
@@ -150,6 +149,7 @@ async function processNextLead() {
   const activeCampaigns = await prisma.campaign.findMany({
     where: { status: 'ACTIVE' },
     include: {
+      steps: { orderBy: { order: 'asc' } },
       linkedAccount: {
         select: { id: true, unipileDsn: true, accountId: true, accessToken: true, status: true },
       },
@@ -174,9 +174,18 @@ async function processNextLead() {
       continue;
     }
 
-    // Find and lock the next PENDING lead using an atomic update
+    // Find and lock the next eligible lead
     const lead = await prisma.lead.findFirst({
-      where: { campaignId: campaign.id, status: 'PENDING' },
+      where: {
+        campaignId: campaign.id,
+        status: { in: ['PENDING', 'ACTIVE'] },
+        replied: false,
+        isConnectionPending: false,
+        OR: [
+          { nextActionAt: null },
+          { nextActionAt: { lte: new Date() } }
+        ]
+      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -184,12 +193,23 @@ async function processNextLead() {
 
     // Mark as SENDING to prevent duplicate processing
     const lockedLead = await prisma.lead.updateMany({
-      where: { id: lead.id, status: 'PENDING' }, // optimistic lock
+      where: { id: lead.id, status: lead.status }, // optimistic lock
       data: { status: 'SENDING' },
     });
 
     if (lockedLead.count === 0) {
       // Another process already grabbed this lead
+      continue;
+    }
+
+    const step = campaign.steps.find((s) => s.order === lead.currentStepOrder);
+
+    if (!step) {
+      // Lead completed all steps
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: { status: 'COMPLETED' },
+      });
       continue;
     }
 
@@ -222,13 +242,37 @@ async function processNextLead() {
       const enrichedLead = { ...lead, ...enrichedData };
 
       // Send the outreach
-      await dispatchOutreach(campaign, enrichedLead, decryptedToken);
+      await dispatchOutreach(campaign, step, enrichedLead, decryptedToken);
 
-      // Mark lead as SENT and increment daily counter
+      let nextStatus = 'ACTIVE';
+      let nextActionAt = null;
+      let isConnectionPending = false;
+      let currentStepOrder = lead.currentStepOrder;
+
+      if (step.type === 'CONNECTION_REQUEST') {
+        isConnectionPending = true;
+      } else if (step.type === 'DIRECT_MESSAGE') {
+        currentStepOrder += 1;
+        const nextStep = campaign.steps.find((s) => s.order === currentStepOrder);
+        if (nextStep) {
+          nextActionAt = new Date(Date.now() + nextStep.delayDays * 24 * 60 * 60 * 1000);
+        } else {
+          nextStatus = 'COMPLETED';
+        }
+      }
+
+      // Mark lead state and increment daily counter
       await prisma.$transaction([
         prisma.lead.update({
           where: { id: lead.id },
-          data: { status: 'SENT', executedAt: new Date(), errorMessage: null },
+          data: { 
+            status: nextStatus,
+            currentStepOrder,
+            nextActionAt,
+            isConnectionPending,
+            executedAt: new Date(),
+            errorMessage: null 
+          },
         }),
         prisma.campaign.update({
           where: { id: campaign.id },
@@ -239,7 +283,7 @@ async function processNextLead() {
             campaignId: campaign.id,
             leadId: lead.id,
             level: 'INFO',
-            message: `Outreach sent to ${lead.profileUrl} via mode "${campaign.mode}".`,
+            message: `Executed step ${step.order} (${step.type}) for ${lead.profileUrl}.`,
           },
         }),
       ]);

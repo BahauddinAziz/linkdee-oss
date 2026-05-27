@@ -38,8 +38,6 @@ model Campaign {
   linkedAccountId  String
   linkedAccount    LinkedInAccount @relation(fields: [linkedAccountId], references: [id])
   name             String
-  mode             String
-  template         String
   delaySeconds     Int             @default(60)
   jitterEnabled    Boolean         @default(true)
   dailyCap         Int             @default(25)
@@ -50,6 +48,7 @@ model Campaign {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   leads            Lead[]
+  steps            CampaignStep[]
   logs             CampaignLog[]
 }
 
@@ -61,11 +60,25 @@ model Lead {
   firstName    String?
   lastName     String?
   company      String?
-  status       String    @default("PENDING")
-  executedAt   DateTime?
-  errorMessage String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  status              String    @default("PENDING")
+  currentStepOrder    Int       @default(1)
+  nextActionAt        DateTime?
+  replied             Boolean   @default(false)
+  isConnectionPending Boolean   @default(false)
+  executedAt          DateTime?
+  errorMessage        String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model CampaignStep {
+  id           String   @id @default(cuid())
+  campaignId   String
+  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  order        Int      // 1, 2, 3...
+  type         String   // CONNECTION_REQUEST | DIRECT_MESSAGE
+  template     String
+  delayDays    Int      // Wait X days AFTER previous step
 }
 
 model CampaignLog {

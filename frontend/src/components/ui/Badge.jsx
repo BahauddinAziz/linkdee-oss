@@ -39,10 +39,19 @@ const STATUS_MAP = {
 };
 
 const DEFAULT_STYLE = { bg: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: 'rgba(100,116,139,0.3)' };
+const SEQUENCE_STYLE = { bg: 'rgba(168,85,247,0.15)', color: '#a855f7', border: 'rgba(168,85,247,0.3)' }; // premium purple
 
 const Badge = ({ status = '', className = '' }) => {
   const key = (status || '').toUpperCase().trim();
-  const style = STATUS_MAP[key] || STATUS_MAP[status] || DEFAULT_STYLE;
+  let style = STATUS_MAP[key] || STATUS_MAP[status];
+  
+  if (!style) {
+    if (key.includes('SEQUENCE')) {
+      style = SEQUENCE_STYLE;
+    } else {
+      style = DEFAULT_STYLE;
+    }
+  }
 
   const label = (status || '').replace(/_/g, ' ');
 

@@ -184,7 +184,7 @@ const CampaignDetail = () => {
         <div className={styles.campaignMeta}>
           <h1 className={styles.campaignName}>{campaign.name}</h1>
           <div className={styles.campaignBadges}>
-            <Badge status={campaign.mode} />
+            <Badge status={`${campaign.steps?.length || 1}-Step Sequence`} />
             <Badge status={campaign.status} />
           </div>
         </div>

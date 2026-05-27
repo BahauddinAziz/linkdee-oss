@@ -13,7 +13,7 @@ const CampaignCard = ({ campaign, onPause, onResume, onStop, onRefetch }) => {
   const {
     id,
     name,
-    mode,
+    steps,
     status,
     totalLeads = 0,
     sentLeads = 0,
@@ -21,6 +21,7 @@ const CampaignCard = ({ campaign, onPause, onResume, onStop, onRefetch }) => {
     sentToday = 0,
   } = campaign;
 
+  const stepCount = steps?.length || 1;
   const progress = totalLeads > 0 ? Math.min((sentLeads / totalLeads) * 100, 100) : 0;
   const dailyProgress = dailyCap > 0 ? Math.min((sentToday / dailyCap) * 100, 100) : 0;
 
@@ -42,7 +43,7 @@ const CampaignCard = ({ campaign, onPause, onResume, onStop, onRefetch }) => {
         <div className={styles.meta}>
           <h3 className={styles.name}>{name}</h3>
           <div className={styles.badges}>
-            <Badge status={mode} />
+            <Badge status={`${stepCount}-Step Sequence`} />
             <Badge status={status} />
           </div>
         </div>

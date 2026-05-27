@@ -6,7 +6,6 @@
 
 import prisma from '../lib/prisma.js';
 
-const VALID_MODES = ['CONNECTION', 'MESSAGE', 'CONNECTION_THEN_MESSAGE'];
 const VALID_STATUSES = ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED', 'SCHEDULED'];
 
 /**
@@ -26,6 +25,7 @@ export async function listCampaigns(req, res, next) {
         linkedAccount: {
           select: { id: true, label: true, status: true, accountId: true },
         },
+        steps: { orderBy: { order: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -39,7 +39,7 @@ export async function listCampaigns(req, res, next) {
 /**
  * Creates a new campaign for the authenticated user.
  *
- * Required body fields: `linkedAccountId`, `name`, `mode`, `template`
+ * Required body fields: `linkedAccountId`, `name`, `steps`
  * Optional: `delaySeconds`, `jitterEnabled`, `dailyCap`, `scheduledStartAt`
  *
  * @param {import('express').Request} req
@@ -51,24 +51,16 @@ export async function createCampaign(req, res, next) {
     const {
       linkedAccountId,
       name,
-      mode,
-      template,
+      steps,
       delaySeconds,
       jitterEnabled,
       dailyCap,
       scheduledStartAt,
     } = req.body;
 
-    if (!linkedAccountId || !name || !mode || !template) {
+    if (!linkedAccountId || !name || !steps || !Array.isArray(steps) || steps.length === 0) {
       return res.status(400).json({
-        error: '`linkedAccountId`, `name`, `mode`, and `template` are required.',
-        code: 400,
-      });
-    }
-
-    if (!VALID_MODES.includes(mode)) {
-      return res.status(400).json({
-        error: `Invalid mode. Must be one of: ${VALID_MODES.join(', ')}.`,
+        error: '`linkedAccountId`, `name`, and `steps` (non-empty array) are required.',
         code: 400,
       });
     }
@@ -90,14 +82,21 @@ export async function createCampaign(req, res, next) {
         userId: req.user.id,
         linkedAccountId,
         name,
-        mode,
-        template,
         delaySeconds: delaySeconds ?? 60,
         jitterEnabled: jitterEnabled ?? true,
         dailyCap: dailyCap ?? 25,
         status: scheduledStartAt ? 'SCHEDULED' : 'DRAFT',
         scheduledStartAt: scheduledStartAt ? new Date(scheduledStartAt) : null,
+        steps: {
+          create: steps.map((s, idx) => ({
+            order: idx + 1,
+            type: s.type,
+            template: s.template || '',
+            delayDays: s.delayDays || 0,
+          })),
+        },
       },
+      include: { steps: { orderBy: { order: 'asc' } } },
     });
 
     return res.status(201).json({ data: campaign });
@@ -123,6 +122,7 @@ export async function getCampaign(req, res, next) {
         linkedAccount: {
           select: { id: true, label: true, status: true, accountId: true, unipileDsn: true },
         },
+        steps: { orderBy: { order: 'asc' } },
         _count: { select: { leads: true, logs: true } },
       },
     });
@@ -163,7 +163,7 @@ export async function getCampaign(req, res, next) {
 export async function updateCampaign(req, res, next) {
   try {
     const { id } = req.params;
-    const { name, template, delaySeconds, jitterEnabled, dailyCap, scheduledStartAt } = req.body;
+    const { name, delaySeconds, jitterEnabled, dailyCap, scheduledStartAt } = req.body;
 
     const campaign = await prisma.campaign.findUnique({ where: { id } });
 
@@ -179,7 +179,6 @@ export async function updateCampaign(req, res, next) {
       where: { id },
       data: {
         ...(name !== undefined && { name }),
-        ...(template !== undefined && { template }),
         ...(delaySeconds !== undefined && { delaySeconds }),
         ...(jitterEnabled !== undefined && { jitterEnabled }),
         ...(dailyCap !== undefined && { dailyCap }),

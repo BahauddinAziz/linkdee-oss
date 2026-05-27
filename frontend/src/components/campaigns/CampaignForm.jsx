@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Button from '../ui/Button';
 import styles from './CampaignForm.module.css';
 
-const MODE_OPTIONS = [
-  { value: 'CONNECTION_REQUEST', label: '🤝 Connection Request', maxChars: 300 },
-  { value: 'DIRECT_MESSAGE',     label: '💬 Direct Message',     maxChars: 8000 },
+const TYPE_OPTIONS = [
+  { value: 'CONNECTION_REQUEST', label: '🤝 Connection Request' },
+  { value: 'DIRECT_MESSAGE',     label: '💬 Direct Message' },
 ];
 
 const VARIABLE_CHIPS = [
@@ -16,65 +16,82 @@ const VARIABLE_CHIPS = [
 
 const INITIAL_STATE = {
   name: '',
-  accountId: '',
-  mode: 'CONNECTION_REQUEST',
-  messageTemplate: '',
+  linkedAccountId: '',
+  steps: [{ type: 'CONNECTION_REQUEST', template: '', delayDays: 0 }],
   delaySeconds: 60,
-  jitter: true,
+  jitterEnabled: true,
   dailyCap: 20,
-  scheduledAt: '',
+  scheduledStartAt: '',
 };
 
-/**
- * CampaignForm — Rich form for creating/editing a campaign.
- * @prop {object}   initialData - Pre-fill form for editing
- * @prop {Array}    accounts    - List of LinkedIn accounts
- * @prop {function} onSubmit(formData) - Submit handler (async)
- * @prop {function} onCancel
- */
 const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
-  const [form, setForm] = useState({ ...INITIAL_STATE, ...initialData });
+  // Handle mapping from old data format if necessary
+  const data = { ...INITIAL_STATE, ...initialData };
+  if (initialData?.accountId && !initialData?.linkedAccountId) data.linkedAccountId = initialData.accountId;
+  if (initialData?.jitter !== undefined && initialData?.jitterEnabled === undefined) data.jitterEnabled = initialData.jitter;
+  if (initialData?.scheduledAt && !initialData?.scheduledStartAt) data.scheduledStartAt = initialData.scheduledAt;
+  if (initialData?.mode && !initialData?.steps) {
+    data.steps = [{ type: initialData.mode, template: initialData.messageTemplate || '', delayDays: 0 }];
+  }
+
+  const [form, setForm] = useState(data);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [textareaRef, setTextareaRef] = useState(null);
-
-  const currentMode = MODE_OPTIONS.find((m) => m.value === form.mode);
-  const maxChars = currentMode?.maxChars || 300;
-  const charCount = form.messageTemplate.length;
+  const textareaRefs = useRef([]);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: null }));
   };
 
+  const handleStepChange = (index, field, value) => {
+    const newSteps = [...form.steps];
+    newSteps[index] = { ...newSteps[index], [field]: value };
+    handleChange('steps', newSteps);
+  };
+
+  const addStep = () => {
+    handleChange('steps', [...form.steps, { type: 'DIRECT_MESSAGE', template: '', delayDays: 3 }]);
+  };
+
+  const removeStep = (index) => {
+    const newSteps = form.steps.filter((_, i) => i !== index);
+    handleChange('steps', newSteps);
+  };
+
   const insertVariable = useCallback(
-    (chip) => {
-      if (!textareaRef) return;
-      const start = textareaRef.selectionStart;
-      const end = textareaRef.selectionEnd;
-      const newValue =
-        form.messageTemplate.substring(0, start) +
-        chip +
-        form.messageTemplate.substring(end);
-      handleChange('messageTemplate', newValue);
-      // Restore cursor after variable
+    (index, chip) => {
+      const textarea = textareaRefs.current[index];
+      if (!textarea) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const currentTemplate = form.steps[index].template;
+      const newValue = currentTemplate.substring(0, start) + chip + currentTemplate.substring(end);
+      handleStepChange(index, 'template', newValue);
+      
       setTimeout(() => {
-        textareaRef.focus();
-        textareaRef.setSelectionRange(start + chip.length, start + chip.length);
+        textarea.focus();
+        textarea.setSelectionRange(start + chip.length, start + chip.length);
       }, 0);
     },
-    [textareaRef, form.messageTemplate]
+    [form.steps]
   );
 
   const validate = () => {
     const errs = {};
     if (!form.name.trim()) errs.name = 'Campaign name is required';
-    if (!form.accountId)   errs.accountId = 'Select a LinkedIn account';
-    if (!form.messageTemplate.trim()) errs.messageTemplate = 'Message template is required';
-    if (form.messageTemplate.length > maxChars)
-      errs.messageTemplate = `Message exceeds ${maxChars} character limit`;
-    if (form.dailyCap < 5 || form.dailyCap > 100)
-      errs.dailyCap = 'Daily cap must be between 5 and 100';
+    if (!form.linkedAccountId) errs.linkedAccountId = 'Select a LinkedIn account';
+    if (form.dailyCap < 5 || form.dailyCap > 100) errs.dailyCap = 'Daily cap must be between 5 and 100';
+    
+    form.steps.forEach((step, i) => {
+      if (!step.template.trim()) {
+        errs[`step_${i}`] = 'Message template is required';
+      }
+      const maxChars = step.type === 'DIRECT_MESSAGE' ? 8000 : 300;
+      if (step.template.length > maxChars) {
+        errs[`step_${i}`] = `Message exceeds ${maxChars} characters`;
+      }
+    });
     return errs;
   };
 
@@ -89,10 +106,13 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
     setIsSubmitting(true);
     try {
       await onSubmit({
-        ...form,
+        name: form.name,
+        linkedAccountId: form.linkedAccountId,
         dailyCap: Number(form.dailyCap),
         delaySeconds: Number(form.delaySeconds),
-        scheduledAt: form.scheduledAt || null,
+        jitterEnabled: form.jitterEnabled,
+        scheduledStartAt: form.scheduledStartAt || null,
+        steps: form.steps.map(s => ({ ...s, delayDays: Number(s.delayDays) }))
       });
     } catch (err) {
       setErrors({ submit: err.message });
@@ -120,9 +140,9 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
       <div className="form-group">
         <label className="form-label">LinkedIn Account *</label>
         <select
-          className={`form-input form-select ${errors.accountId ? 'error' : ''}`}
-          value={form.accountId}
-          onChange={(e) => handleChange('accountId', e.target.value)}
+          className={`form-input form-select ${errors.linkedAccountId ? 'error' : ''}`}
+          value={form.linkedAccountId}
+          onChange={(e) => handleChange('linkedAccountId', e.target.value)}
         >
           <option value="">Select an account...</option>
           {accounts.map((acc) => (
@@ -131,65 +151,104 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
             </option>
           ))}
         </select>
-        {errors.accountId && <span className="form-error">⚠ {errors.accountId}</span>}
+        {errors.linkedAccountId && <span className="form-error">⚠ {errors.linkedAccountId}</span>}
         {accounts.length === 0 && (
           <span className={styles.hint}>No accounts connected. Go to LinkedIn Accounts to add one.</span>
         )}
       </div>
 
-      {/* Mode Selector */}
-      <div className="form-group">
-        <label className="form-label">Campaign Mode</label>
-        <div className={styles.modeToggle}>
-          {MODE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`${styles.modeOption} ${form.mode === opt.value ? styles.modeOptionActive : ''}`}
-              onClick={() => handleChange('mode', opt.value)}
-            >
-              {opt.label}
-            </button>
-          ))}
+      {/* Sequence Builder */}
+      <div className={styles.sequenceBuilder}>
+        <h4 className={styles.sequenceTitle}>Workflow Sequence</h4>
+        <div className={styles.stepsList}>
+          {form.steps.map((step, index) => {
+            const maxChars = step.type === 'DIRECT_MESSAGE' ? 8000 : 300;
+            const charCount = step.template.length;
+            const stepError = errors[`step_${index}`];
+
+            return (
+              <div key={index} className={styles.stepCard}>
+                <div className={styles.stepHeader}>
+                  <div className={styles.stepIndicator}>Step {index + 1}</div>
+                  {index > 0 && (
+                    <button type="button" className={styles.removeStepBtn} onClick={() => removeStep(index)}>
+                      🗑️ Remove
+                    </button>
+                  )}
+                </div>
+
+                <div className={styles.stepBody}>
+                  {index > 0 && (
+                    <div className="form-group">
+                      <label className="form-label">Wait Delay</label>
+                      <div className={styles.delayInputWrap}>
+                        <span>Wait</span>
+                        <input
+                          type="number"
+                          className="form-input"
+                          style={{ width: '80px', margin: '0 8px' }}
+                          min="1"
+                          value={step.delayDays}
+                          onChange={(e) => handleStepChange(index, 'delayDays', e.target.value)}
+                        />
+                        <span>days then...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="form-label">Action Type</label>
+                    <select
+                      className="form-input form-select"
+                      value={step.type}
+                      onChange={(e) => handleStepChange(index, 'type', e.target.value)}
+                    >
+                      {TYPE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Message Template *
+                      <span className={styles.charCounter} style={{ color: charCount > maxChars ? 'var(--color-error)' : 'var(--text-muted)' }}>
+                        {charCount} / {maxChars}
+                      </span>
+                    </label>
+
+                    <div className={styles.chipRow}>
+                      {VARIABLE_CHIPS.map((chip) => (
+                        <span
+                          key={chip.value}
+                          className="tag"
+                          onClick={() => insertVariable(index, chip.value)}
+                          title={`Insert ${chip.value}`}
+                        >
+                          {chip.label}
+                        </span>
+                      ))}
+                    </div>
+
+                    <textarea
+                      ref={(el) => (textareaRefs.current[index] = el)}
+                      className={`form-input ${styles.textarea} ${stepError ? 'error' : ''}`}
+                      placeholder={step.type === 'CONNECTION_REQUEST' ? "Hi {first_name}, I'd love to connect!" : "Thanks for connecting!"}
+                      value={step.template}
+                      onChange={(e) => handleStepChange(index, 'template', e.target.value)}
+                      rows={5}
+                      maxLength={maxChars + 100}
+                    />
+                    {stepError && <span className="form-error">⚠ {stepError}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
-
-      {/* Message Template */}
-      <div className="form-group">
-        <label className="form-label">
-          Message Template *
-          <span className={styles.charCounter} style={{ color: charCount > maxChars ? 'var(--color-error)' : 'var(--text-muted)' }}>
-            {charCount} / {maxChars}
-          </span>
-        </label>
-
-        <div className={styles.chipRow}>
-          {VARIABLE_CHIPS.map((chip) => (
-            <span
-              key={chip.value}
-              className="tag"
-              onClick={() => insertVariable(chip.value)}
-              title={`Insert ${chip.value}`}
-            >
-              {chip.label}
-            </span>
-          ))}
-        </div>
-
-        <textarea
-          ref={(el) => setTextareaRef(el)}
-          className={`form-input ${styles.textarea} ${errors.messageTemplate ? 'error' : ''}`}
-          placeholder={
-            form.mode === 'CONNECTION_REQUEST'
-              ? "Hi {first_name}, I came across your profile and would love to connect..."
-              : "Hi {first_name}, thanks for connecting! I wanted to reach out because..."
-          }
-          value={form.messageTemplate}
-          onChange={(e) => handleChange('messageTemplate', e.target.value)}
-          rows={6}
-          maxLength={maxChars + 100}
-        />
-        {errors.messageTemplate && <span className="form-error">⚠ {errors.messageTemplate}</span>}
+        <Button variant="secondary" type="button" onClick={addStep} className={styles.addStepBtn}>
+          ➕ Add Step
+        </Button>
       </div>
 
       {/* Delay Slider */}
@@ -214,7 +273,6 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
 
       {/* Two-column row */}
       <div className={styles.twoCol}>
-        {/* Daily Cap */}
         <div className="form-group">
           <label className="form-label">Daily Cap (5–100) *</label>
           <input
@@ -228,14 +286,13 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
           {errors.dailyCap && <span className="form-error">⚠ {errors.dailyCap}</span>}
         </div>
 
-        {/* Scheduled Start */}
         <div className="form-group">
           <label className="form-label">Scheduled Start (optional)</label>
           <input
             className="form-input"
             type="datetime-local"
-            value={form.scheduledAt}
-            onChange={(e) => handleChange('scheduledAt', e.target.value)}
+            value={form.scheduledStartAt}
+            onChange={(e) => handleChange('scheduledStartAt', e.target.value)}
           />
         </div>
       </div>
@@ -250,9 +307,9 @@ const CampaignForm = ({ initialData, accounts = [], onSubmit, onCancel }) => {
           <button
             type="button"
             role="switch"
-            aria-checked={form.jitter}
-            className={`${styles.toggle} ${form.jitter ? styles.toggleOn : ''}`}
-            onClick={() => handleChange('jitter', !form.jitter)}
+            aria-checked={form.jitterEnabled}
+            className={`${styles.toggle} ${form.jitterEnabled ? styles.toggleOn : ''}`}
+            onClick={() => handleChange('jitterEnabled', !form.jitterEnabled)}
           >
             <span className={styles.toggleThumb} />
           </button>
